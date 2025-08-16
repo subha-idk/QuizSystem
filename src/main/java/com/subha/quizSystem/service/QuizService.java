@@ -33,6 +33,7 @@ public class QuizService {
 
     @Autowired
     private QuizRepository quizRepository;
+
     @Autowired
     private QuizSessionRepository quizSessionRepository;
 
@@ -40,7 +41,7 @@ public class QuizService {
     private QuizSessionService quizSessionService;
 
     public ResponseEntity<String> createQuizByCategory(String category, Integer limit, String title,
-                                                       Integer timeLimit) {
+            Integer timeLimit) {
         try {
             // Use PageRequest to limit the number of questions
             List<Question> questions = questionRepository.getQuestionsForQuizByCategory(
@@ -74,12 +75,37 @@ public class QuizService {
                         q.getOption1(),
                         q.getOption2(),
                         q.getOption3(),
-                        q.getOption4()
-                ))
+                        q.getOption4()))
                 .collect(Collectors.toList());
 
         QuizDTO quizDTO = new QuizDTO(quiz.getQuizId(), quiz.getQuizTitle(), quiz.getTimeLimit(), questionWrappers);
         return new ResponseEntity<>(quizDTO, HttpStatus.OK);
+    }
+
+    /**
+     * Creates a new, empty quiz shell with a title and time limit.
+     * 
+     * @param title     The title for the new quiz.
+     * @param timeLimit The time limit for the quiz in minutes.
+     * @return A ResponseEntity containing the newly created Quiz object or an error
+     *         message.
+     */
+    public ResponseEntity<Quiz> createEmptyQuiz(String title, Integer timeLimit) {
+        try {
+            Quiz newQuiz = new Quiz();
+
+            newQuiz.setQuizTitle(title);
+            newQuiz.setTimeLimit(timeLimit);
+            newQuiz.setQuestions(new ArrayList<>());
+
+            Quiz savedQuiz = quizRepository.save(newQuiz);
+
+            return new ResponseEntity<>(savedQuiz, HttpStatus.CREATED);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return new ResponseEntity<>(null, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
     }
 
     public ResponseEntity<QuizDTO> startQuizSession(Integer quizId, String sessionId, String username) {
@@ -100,7 +126,6 @@ public class QuizService {
         }
     }
 
-
     /**
      * Main method to get the quiz result.
      */
@@ -120,8 +145,7 @@ public class QuizService {
 
             if (submissionTime.isAfter(deadline)) {
                 throw new TimeLimitExceededException(
-                        "Submission failed. The time limit for the quiz was exceeded."
-                );
+                        "Submission failed. The time limit for the quiz was exceeded.");
             }
 
             // Mark inactive & save
@@ -146,7 +170,6 @@ public class QuizService {
         }
     }
 
-
     public ResponseEntity<List<QuizSummaryDTO>> getAllQuizzes() {
         try {
             List<Quiz> quizzes = quizRepository.findAll();
@@ -163,11 +186,93 @@ public class QuizService {
     }
 
     /**
+     * 
+     * @param quizId
+     * @return
+     */
+    public ResponseEntity<Quiz> getQuizById(Integer quizId) {
+        try {
+            Quiz quiz = quizRepository.findById(quizId)
+                    .orElseThrow(() -> new NotFoundException("Quiz not found with id: " + quizId));
+            
+            return new ResponseEntity<>(quiz, HttpStatus.OK);
+
+        } catch (NotFoundException nfe) {
+            return new ResponseEntity<>(null, HttpStatus.NOT_FOUND);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return new ResponseEntity<>(null, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
      * Finds and validates a quiz using the ID from a session.
      */
     private Quiz getQuizFromSession(QuizSession session) {
         return quizRepository.findById(session.getQuizId())
                 .orElseThrow(() -> new NotFoundException("quizId = " + session.getQuizId() + " not found."));
+    }
+
+    /**
+     * Adds an existing question to an existing quiz.
+     * 
+     * @param quizId     The ID of the quiz to be updated.
+     * @param questionId The ID of the question to add.
+     * @return A ResponseEntity containing the updated Quiz object or an error
+     *         message.
+     */
+    public ResponseEntity<Quiz> addQuestionToQuiz(Integer quizId, Integer questionId) {
+        try {
+            Quiz quiz = quizRepository.findById(quizId)
+                    .orElseThrow(() -> new NotFoundException("Quiz not found with id: " + quizId));
+
+            Question question = questionRepository.findById(questionId)
+                    .orElseThrow(() -> new NotFoundException("Question not found with id: " + questionId));
+
+            List<Question> questions = quiz.getQuestions();
+            questions.add(question);
+
+            Quiz updatedQuiz = quizRepository.save(quiz);
+            return new ResponseEntity<>(updatedQuiz, HttpStatus.OK);
+
+        } catch (NotFoundException nfe) {
+            return new ResponseEntity<>(null, HttpStatus.NOT_FOUND);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return new ResponseEntity<>(null, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Removes a specific question from a quiz.
+     * 
+     * @param quizId     The ID of the quiz to modify.
+     * @param questionId The ID of the question to remove.
+     * @return A ResponseEntity with a success message or an error.
+     */
+    public ResponseEntity<String> removeQuestionFromQuiz(Integer quizId, Integer questionId) {
+        try {
+            Quiz quiz = quizRepository.findById(quizId)
+                    .orElseThrow(() -> new NotFoundException("Quiz not found with id: " + quizId));
+            List<Question> questions = quiz.getQuestions();
+
+            boolean removed = questions.removeIf(question -> question.getQId().equals(questionId));
+
+            if (!removed) {
+                return new ResponseEntity<>("Question with id " + questionId + " not found in this quiz.",
+                        HttpStatus.NOT_FOUND);
+            }
+
+            quizRepository.save(quiz);
+
+            return new ResponseEntity<>("Question successfully removed from the quiz.", HttpStatus.OK);
+
+        } catch (NotFoundException nfe) {
+            return new ResponseEntity<>(nfe.getMessage(), HttpStatus.NOT_FOUND);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return new ResponseEntity<>("An internal server error occurred.", HttpStatus.INTERNAL_SERVER_ERROR);
+        }
     }
 
     /**
@@ -192,7 +297,6 @@ public class QuizService {
         System.out.println("calculateResults: questionMap size: " + questionMap.size());
         questionMap.keySet().forEach(key -> System.out.println("Map Key: " + key));
 
-
         for (Response userResponse : responses) {
             // Debugging: Print the rId from the frontend
             System.out.println("calculateResults: Processing rId from user response: " + userResponse.getRId());
@@ -214,7 +318,8 @@ public class QuizService {
                 result.setCorrect(isCorrect);
                 questionResults.add(result);
             } else {
-                System.err.println("calculateResults: ERROR! No question found in map for rId: " + userResponse.getRId());
+                System.err
+                        .println("calculateResults: ERROR! No question found in map for rId: " + userResponse.getRId());
             }
         }
 
