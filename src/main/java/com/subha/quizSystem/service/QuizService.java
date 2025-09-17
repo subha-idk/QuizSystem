@@ -222,30 +222,37 @@ public class QuizService {
      * @return A ResponseEntity containing the updated Quiz object or an error
      *         message.
      */
+
     @Transactional
-    public ResponseEntity<Quiz> addQuestionToQuiz(Integer quizId, Integer questionId) {
+    public ResponseEntity<?> addQuestionToQuiz(Integer quizId, Integer questionId) {
         try {
-            // Find the quiz. The session is now open.
             Quiz quiz = quizRepository.findById(quizId)
                     .orElseThrow(() -> new NotFoundException("Quiz not found with id: " + quizId));
 
-            // Find the question.
-            Question question = questionRepository.findById(questionId)
+            Question questionToAdd = questionRepository.findById(questionId)
                     .orElseThrow(() -> new NotFoundException("Question not found with id: " + questionId));
 
-            // Get the questions list. Because the session is still open, this now works.
-            List<Question> questions = quiz.getQuestions();
-            questions.add(question);
+            // --- FIX: Check if the question is already in the quiz ---
+            boolean alreadyExists = quiz.getQuestions().stream()
+                    .anyMatch(q -> q.getQId().equals(questionId));
 
-            // Save the quiz. The transaction will commit the changes when the method ends.
+            if (alreadyExists) {
+                // Return a specific error message if the question is already there.
+                // 409 Conflict is a good HTTP status for this.
+                return new ResponseEntity<>("This question is already in the quiz.", HttpStatus.CONFLICT);
+            }
+
+            // If it doesn't exist, add it.
+            quiz.getQuestions().add(questionToAdd);
             Quiz updatedQuiz = quizRepository.save(quiz);
+
             return new ResponseEntity<>(updatedQuiz, HttpStatus.OK);
 
         } catch (NotFoundException nfe) {
-            return new ResponseEntity<>(null, HttpStatus.NOT_FOUND);
+            return new ResponseEntity<>(nfe.getMessage(), HttpStatus.NOT_FOUND);
         } catch (Exception e) {
             e.printStackTrace();
-            return new ResponseEntity<>(null, HttpStatus.INTERNAL_SERVER_ERROR);
+            return new ResponseEntity<>("An internal server error occurred.", HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 
