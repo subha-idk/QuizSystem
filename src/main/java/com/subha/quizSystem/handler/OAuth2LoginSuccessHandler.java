@@ -30,13 +30,26 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
                                         Authentication authentication) throws IOException, ServletException {
-        
-        OAuth2User oauth2User = (OAuth2User) authentication.getPrincipal();
-        String email = oauth2User.getAttribute("email");
-        String name = oauth2User.getAttribute("name");
 
-        User user = userService.processOAuthPostLogin(email, name);
-        String role = user.getRole().name(); // This will return "ADMIN" or "USER"
+        OAuth2User oauth2User = (OAuth2User) authentication.getPrincipal();
+
+        // --- FIX: Add a fallback for the username ---
+        String username = oauth2User.getAttribute("email");
+        if (username == null) {
+            // If email is null (common with GitHub), use the 'login' attribute instead.
+            username = oauth2User.getAttribute("login");
+        }
+
+        String name = oauth2User.getAttribute("name");
+        // If the name is also null, use the username as the name.
+        if (name == null) {
+            name = username;
+        }
+
+        // --- Core Logic: Delegate to UserService ---
+        User user = userService.processOAuthPostLogin(username, name);
+
+        String role = user.getRole().name();
         String token = jwtService.generateToken(user.getUsername(), role);
 
         String targetUrl = frontendUrl + "/oauth2/redirect?token=" + token;
