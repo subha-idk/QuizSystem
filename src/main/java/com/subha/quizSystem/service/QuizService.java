@@ -14,6 +14,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.naming.TimeLimitExceededException;
 import java.time.LocalDateTime;
@@ -221,17 +222,22 @@ public class QuizService {
      * @return A ResponseEntity containing the updated Quiz object or an error
      *         message.
      */
+    @Transactional
     public ResponseEntity<Quiz> addQuestionToQuiz(Integer quizId, Integer questionId) {
         try {
+            // Find the quiz. The session is now open.
             Quiz quiz = quizRepository.findById(quizId)
                     .orElseThrow(() -> new NotFoundException("Quiz not found with id: " + quizId));
 
+            // Find the question.
             Question question = questionRepository.findById(questionId)
                     .orElseThrow(() -> new NotFoundException("Question not found with id: " + questionId));
 
+            // Get the questions list. Because the session is still open, this now works.
             List<Question> questions = quiz.getQuestions();
             questions.add(question);
 
+            // Save the quiz. The transaction will commit the changes when the method ends.
             Quiz updatedQuiz = quizRepository.save(quiz);
             return new ResponseEntity<>(updatedQuiz, HttpStatus.OK);
 
